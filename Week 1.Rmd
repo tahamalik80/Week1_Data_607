@@ -1,0 +1,344 @@
+---
+title: "Week1"
+author: "Taha Malik"
+date: "2025-08-31"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Overview
+
+This report tidies and transforms a FiveThirtyEight dataset from Walt Hickey’s 2015 investigation of **Fandango’s movie ratings**. The article found evidence that **displayed star ratings on Fandango were systematically higher** than the underlying averages. We demonstrate reproducible data import, rigorous cleaning, summary statistics, inflation comparisons, and discuss limitations.  
+**Article:** [Be Suspicious Of Online Movie Ratings, Especially Fandango’s](https://fivethirtyeight.com/features/fandango-movies-ratings/).
+
+# Reproducible data access
+
+All data are loaded **directly from public GitHub URLs** in FiveThirtyEight’s data repository—no local files—so the workflow is fully reproducible.
+
+```{r libraries}
+library(tidyverse)
+library(janitor)
+library(readr)
+library(glue)
+library(knitr)
+library(scales)
+library(httr)
+```
+
+This section defines the direct URLs for the raw data files on GitHub and performs a crucial check to ensure they're accessible before proceeding. This guarantees our analysis is reproducible and not dependent on local files. If a URL is unreachable, the process will stop with an informative error message.
+```{r data-urls}
+# Step 1: Define source URLs and check connectivity (graceful failure)
+url_comparison <- "https://raw.githubusercontent.com/fivethirtyeight/data/master/fandango/fandango_score_comparison.csv"
+url_scrape     <- "https://raw.githubusercontent.com/fivethirtyeight/data/master/fandango/fandango_scrape.csv"
+
+safe_head <- function(u) {
+  resp <- try(httr::HEAD(u), silent = TRUE)
+  if(inherits(resp, "response") && httr::status_code(resp) == 200) return(TRUE)
+  FALSE
+}
+
+ok1 <- safe_head(url_comparison)
+ok2 <- safe_head(url_scrape)
+
+resp_tbl <- tibble::tibble(
+  url = c(url_comparison, url_scrape),
+  status = c(ifelse(ok1, "OK", "ERROR"), ifelse(ok2, "OK", "ERROR"))
+)
+kable(resp_tbl, caption = "Remote data availability check (HTTP 200 = OK)")
+
+if(!ok1 || !ok2) {
+  stop("One or more data URLs unreachable. Check internet connection or the URL paths.")
+}
+
+```
+
+# Load and inspect raw data
+
+This section loads the raw data directly from the verified URLs and displays a basic glimpse of each dataset. This is a crucial step to understand the initial structure, data types, and column names. We can see that raw_comp contains various movie review scores from multiple sites, while raw_scrape contains a simpler, more recent snapshot of Fandango's own ratings. This initial inspection reveals the column names that will need to be cleaned and highlights the different data points available for our analysis.
+
+```{r load-raw}
+# Step 3: Read data and clean column names
+raw_comp  <- readr::read_csv(url_comparison, show_col_types = FALSE) |> janitor::clean_names()
+raw_scrape <- readr::read_csv(url_scrape, show_col_types = FALSE) |> janitor::clean_names()
+
+# Step 4: Basic glimpse for teaching clarity
+glimpse(raw_comp)
+glimpse(raw_scrape)
+```
+
+# Data summary and missing values
+
+This section provides a quick overview of the dataset's scope and integrity. It calculates the total number of movies in the sample (146), identifies the years covered by the data (2014, 2015), and, most importantly, checks for missing values. The table confirms that this particular dataset is complete, with zero missing values across all columns. This initial check is critical for ensuring the reliability of subsequent analysis and data transformations. 
+
+```{r data-summary}
+# Step 5: Summarize coverage and missingness
+n_movies <- nrow(raw_comp)
+years <- sort(unique(stringr::str_extract(raw_comp$film, "\\d{4}")))
+n_years <- length(years)
+
+missing_summary <- raw_comp |>
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "column", values_to = "n_missing")
+
+n_missing_total <- sum(missing_summary$n_missing)
+
+glue("Movies in sample: {n_movies}")
+glue("Years covered: {paste(years, collapse = ', ')}")
+glue("Total missing values: {n_missing_total}")
+
+kable(missing_summary, caption = "Missing values per column")
+```
+
+# Tidy transformations
+
+This section is dedicated to tidying and transforming the raw data into a clean, analysis-ready format. We're performing several key operations here:
+
+* Extracting and separating: The film title and year are extracted from the film column into their own distinct title and year columns.
+
+* Renaming for clarity: Abbreviated column names (like fandango_ratingvalue) are renamed to be more descriptive and easier to understand (fandango_rating_value).
+
+* Creating a new target variable: A new column, inflated_flag, is created to represent the core finding of the article—whether a movie's displayed Fandango star rating is inflated (0.5 stars or more higher) than its actual rating. This boolean flag serves as our target variable for any future modeling or analysis.
+
+Finally, a subset of the most relevant columns is selected and arranged, producing the final, cleaned data frame that will be used for all subsequent analysis.
+
+```{r transform}
+# Step 6: Parse title/year, rename columns, compute inflation flag
+comp1 <- raw_comp |>
+  mutate(
+    title = stringr::str_remove(film, "\\s*\\(\\d{4}\\)$"),
+    year  = as.integer(stringr::str_extract(film, "\\d{4}(?=\\)$)"))
+  )
+
+# Step 7: Rename abbreviations -> full names (keep normalized 0-5 metrics)
+comp2 <- comp1 |>
+  rename(
+    rotten_tomatoes = rotten_tomatoes,
+    rotten_tomatoes_user = rotten_tomatoes_user,
+    metacritic = metacritic,
+    metacritic_user = metacritic_user,
+    imdb = imdb,
+    fandango_stars = fandango_stars,
+    fandango_rating_value = fandango_ratingvalue,
+    rt_norm = rt_norm,
+    rt_user_norm = rt_user_norm,
+    metacritic_norm = metacritic_norm,
+    metacritic_user_norm = metacritic_user_nom,  # spelled *_nom in source
+    imdb_norm = imdb_norm,
+    rt_norm_round = rt_norm_round,
+    rt_user_norm_round = rt_user_norm_round,
+    metacritic_norm_round = metacritic_norm_round,
+    metacritic_user_norm_round = metacritic_user_norm_round,
+    imdb_norm_round = imdb_norm_round,
+    metacritic_user_vote_count = metacritic_user_vote_count,
+    imdb_user_vote_count = imdb_user_vote_count,
+    fandango_votes = fandango_votes,
+    fandango_difference = fandango_difference
+  )
+
+# Step 8: Compute inflation target variable
+comp3 <- comp2 |>
+  mutate(
+    fandango_diff_calc = fandango_stars - fandango_rating_value,
+    inflated_flag = fandango_diff_calc >= 0.5
+  )
+
+# Step 9: Final, analysis-ready subset of columns with human-friendly names
+movies_clean <- comp3 |>
+  select(
+    title, year,
+    fandango_stars, fandango_rating_value,
+    imdb_norm,
+    rotten_tomatoes_norm = rt_norm,
+    rotten_tomatoes_user_norm = rt_user_norm,
+    metacritic_norm,
+    metacritic_user_norm,
+    fandango_difference, fandango_diff_calc, inflated_flag,
+    imdb_user_vote_count, metacritic_user_vote_count, fandango_votes
+  ) |>
+  arrange(desc(fandango_difference), title)
+
+movies_clean |> head() |> kable(caption = "Preview: cleaned movie ratings (subset of columns)")
+```
+
+## Tidy long format (site × metric)
+This code block transforms the data from a wide format (where each site's rating is a separate column) to a tidy long format. This is a critical step for cross-site analysis and visualization, as it makes it possible to compare different rating sources (e.g., IMDb, Rotten Tomatoes, Metacritic) and types (user vs. critic) in a single, unified data frame. The process involves:
+
+* Pivoting: All rating columns are "gathered" into two new columns: one (site_metric) to hold the original column name and another (score_0to5) for the rating value.
+
+* Separating and Cleaning: The combined site_metric column is then split into site (e.g., "rotten_tomatoes") and type (e.g., "user" or "critic") for easier filtering and grouping. This prepares the data for powerful operations like grouping by site to calculate average scores. 
+```{r pivot-long}
+# Step 10: Pivot scores into a tidy long format for cross-site analysis
+ratings_long <- comp3 |>
+  select(title, year, fandango_stars, fandango_rating_value,
+         imdb_norm, rt_norm, rt_user_norm, metacritic_norm, metacritic_user_norm) |>
+  mutate(fandango_norm = fandango_rating_value) |>
+  select(-fandango_rating_value) |>
+  pivot_longer(
+    cols = c(fandango_norm, imdb_norm, rt_norm, rt_user_norm, metacritic_norm, metacritic_user_norm),
+    names_to = "site_metric",
+    values_to = "score_0to5"
+  ) |>
+  separate_wider_delim(site_metric, delim = "_", names = c("site", "type", "extra"), too_few = "align_start") |>
+  mutate(
+    site = recode(site,
+      "rt" = "rotten_tomatoes",
+      "imdb" = "imdb",
+      "metacritic" = "metacritic",
+      "fandango" = "fandango"
+    ),
+    type = dplyr::case_when(
+      site == "fandango" ~ "user",
+      type == "norm" ~ "critic",          # e.g., rt_norm, metacritic_norm
+      type == "user" ~ "user",
+      TRUE ~ type
+    )
+  ) |>
+  select(title, year, site, type, score_0to5)
+
+ratings_long |> slice(1:8) |> kable(caption = "Preview: tidy long ratings (0–5 scale)")
+```
+
+# Inflation rate comparison across sites
+This code block calculates and compares the mean movie scores across all major rating sites. This is the central quantitative part of the analysis, as it allows us to verify the article's main claim: that Fandango's ratings are systematically higher than those from other platforms.
+
+* Grouped Means: The code first groups the ratings_long data frame by site and calculates the average score_0to5 for each.
+
+* Inflation Rate: It then computes the Fandango inflation rate by taking the mean of the inflated_flag column. Because TRUE is treated as 1 and FALSE as 0 in R, the mean of this column directly represents the percentage of movies with an inflated rating.
+
+* Combined Results: The two results are combined into a single table, providing a clear and concise summary that highlights how Fandango's ratings compare to those from IMDb, Rotten Tomatoes, and Metacritic. 
+```{r inflation-comparison}
+# Step 11: Compare mean scores across sites and inflation rate for Fandango
+site_means <- ratings_long |>
+  group_by(site) |>
+  summarise(mean_score = mean(score_0to5, na.rm = TRUE), .groups = "drop")
+
+inflation_rate <- mean(comp3$inflated_flag)
+site_means <- bind_rows(
+  site_means,
+  tibble(site = "fandango_inflation_rate", mean_score = inflation_rate)
+)
+kable(site_means, digits = 2, caption = "Mean score per site and Fandango inflation rate")
+```
+
+# Exploratory graphics
+This section uses visualizations to provide a visual summary of the data and reinforce the findings from the article. The first plot, Displayed stars vs. actual average on Fandango, is a scatter plot that directly compares the two Fandango rating metrics.
+
+* Parity Line: The dashed line represents parity, where the displayed stars are exactly equal to the actual rating value.
+
+* Inflation: Any point that falls above this line represents a movie where the displayed star rating was inflated, or rounded up, compared to its true average. This visualization powerfully demonstrates the systematic upward rounding that was the central finding of the original FiveThirtyEight investigation.
+```{r plot-1}
+# Step 12: Displayed stars vs actual average on Fandango
+ggplot(comp3, aes(x = fandango_rating_value, y = fandango_stars)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2) +
+  labs(
+    title = "Displayed stars vs. actual average on Fandango (2015 sample)",
+    subtitle = "Dashed line = parity; points above line indicate inflation",
+    x = "Actual average (ratingValue, 0–5)",
+    y = "Displayed stars (0–5)"
+  )
+```
+This section visualizes the distribution of movie scores from different websites on a common 0–5 scale. This allows for a direct comparison of how other sites' ratings are distributed relative to each other, and implicitly, to Fandango's.
+
+* Histograms: The code creates a separate histogram for each site (excluding Fandango) to show the frequency of ratings at different score levels.
+
+* Insights: By filtering out Fandango, we can see that the ratings from sites like Rotten Tomatoes, IMDb, and Metacritic generally have a more varied and spread-out distribution across the 0–5 scale. This contrasts with Fandango, which, as the prior plot showed, has a much higher and more compressed distribution due to its rounding-up policy. This plot provides a powerful visual argument supporting the article's findings.
+```{r plot-2}
+# Step 13: Cross-site distributions on common 0–5 scale
+ratings_long |>
+  filter(site != "fandango") |>
+  mutate(site = str_to_title(str_replace_all(site, "_", " "))) |>
+  ggplot(aes(x = score_0to5)) +
+  geom_histogram(bins = 20) +
+  facet_wrap(~ site) +
+  labs(
+    title = "User/critic scores across sites on the same 0–5 scale",
+    x = "Score (0–5)", y = "Count"
+  )
+```
+This section provides a direct summary of the most egregious examples of rating inflation found in the dataset. It creates a table of the top 10 movies where the displayed star rating was most inflated compared to the actual average rating.
+
+* Ranking: The code calculates the difference between fandango_stars and fandango_rating_value and then sorts the movies in descending order based on this difference.
+
+* Final Output: The resulting table highlights specific movies that saw the greatest "round-up" in their Fandango rating, providing concrete evidence to support the article's claim of systematic rating inflation. This gives the audience a clear picture of which movies were most affected by Fandango's rating policy.
+```{r plot-3}
+# Step 14: Top-10 inflation by displayed minus actual Fandango rating (stars)
+top_inflated <- comp3 |>
+  arrange(desc(fandango_diff_calc)) |>
+  slice(1:10) |>
+  select(title, year, fandango_stars, fandango_rating_value, fandango_diff_calc)
+kable(top_inflated, digits = 2, caption = "Top-10 inflation by displayed minus actual Fandango rating (stars)")
+```
+
+# Deliverable: final analysis-ready data frame
+This section provides the final deliverable of the assignment: the cleaned and transformed data frame. It takes the movies_clean data frame, which was prepared in the previous steps, and assigns it to a new variable called final_df. This data frame contains a carefully selected subset of columns with meaningful names and includes the key target variable (inflated_flag). The table shown is a preview of the first 10 rows, demonstrating that the data is now structured and ready for any future analysis, such as modeling, visualization, or statistical inference. This step formally concludes the data transformation portion of the project.
+
+```{r final-and-save}
+# Step 15: Final subset for downstream analysis
+final_df <- movies_clean
+kable(head(final_df, 10), caption = "Final deliverable: cleaned subset + target")
+```
+
+
+This dataset, from the 2015 FiveThirtyEight investigation, has several inherent limitations:
+
+- **Temporal Scope:**  
+  The data is a snapshot in time, covering movies from 2014-2015. It doesn't reflect any changes Fandango may have made to its rating practices after the article's publication.
+
+- **Selection Bias:**  
+  The sample primarily includes widely-released movies that appear on multiple major review sites, potentially excluding independent or international films. This might not be representative of the entire cinematic landscape.
+
+- **Methodological Differences:**  
+  The various review sites (IMDb, Rotten Tomatoes, Metacritic) use different underlying methodologies and user bases. Their scores aren't a "ground truth" but rather a separate perspective, each with its own biases.
+
+- **Data Integrity:**  
+  While we addressed minor issues like the column typo (`metacritic_user_nom`), other subtle inconsistencies may exist and could affect more complex analyses.
+
+# Conclusions and Recommendations
+
+## Key Findings
+
+Our analysis confirms the central claim of the FiveThirtyEight article: the displayed Fandango star rating is systematically inflated compared to its true numerical average. We found that the `inflated_flag`—which we defined as a difference of at least 0.5 stars—is a common occurrence in this dataset. By contrast, other sites like IMDb, Rotten Tomatoes, and Metacritic exhibit a more varied and less skewed distribution of scores across the full 0–5 range.
+
+## Future Work and Extensions
+
+To build on this project, we recommend the following:
+
+- **Temporal Analysis:**  
+  Obtain more recent data to determine if Fandango's rating inflation persisted or changed in the years following the original article. This would provide a valuable update to the initial findings.
+
+- **Weighted Averages:**  
+  Incorporate the vote counts from each site to create a more robust analysis. This would give more weight to movies with a larger number of reviews, improving the accuracy of cross-site comparisons.
+
+- **Predictive Modeling:**  
+  Use the tidy long format data to build a predictive model. We could use scores from other sites to predict a movie's Fandango star rating, helping to quantify the exact degree of inflation.
+
+- **Threshold Sensitivity:**  
+  Explore the impact of changing the inflation threshold (e.g., from 0.5 stars to 0.4 or 0.6) to test the robustness of our `inflated_flag` finding.
+
+# References
+
+- Hickey, W. (2015). *Be Suspicious Of Online Movie Ratings, Especially Fandango’s*. FiveThirtyEight.  
+  https://fivethirtyeight.com/features/fandango-movies-ratings/  
+- FiveThirtyEight data repository (Fandango).  
+  `fandango_score_comparison.csv` and `fandango_scrape.csv` pulled via raw GitHub URLs.
+
+# Submission links (replace with your URLs)
+
+- **GitHub repository (.Rmd included):** _ADD YOUR LINK HERE_  
+- **RPubs publication:** _ADD YOUR LINK HERE_  
+
+# Session info
+
+```{r}
+sessionInfo()
+```
