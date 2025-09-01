@@ -169,6 +169,8 @@ movies_clean <- comp3 |>
 movies_clean |> head() |> kable(caption = "Preview: cleaned movie ratings (subset of columns)")
 ```
 
+The transformed data frame `movies_clean` provides a clean, analysis-ready summary of movie ratings from multiple sources, with key columns for each film's title, year, Fandango displayed stars, actual Fandango rating, normalized scores from IMDb, Rotten Tomatoes, and Metacritic, as well as vote counts. The crucial addition is `inflated_flag`, which is **TRUE** for movies where Fandango's displayed star rating is inflated by 0.5 or more compared to its actual average—this matches the article's central claim. For example, all previewed movies show `inflated_flag = TRUE`, confirming systematic inflation in Fandango's ratings relative to the underlying score. This table is now well-structured for further analysis, visualization, or modeling.
+
 ## Tidy long format (site × metric)
 This code block transforms the data from a wide format (where each site's rating is a separate column) to a tidy long format. This is a critical step for cross-site analysis and visualization, as it makes it possible to compare different rating sources (e.g., IMDb, Rotten Tomatoes, Metacritic) and types (user vs. critic) in a single, unified data frame. The process involves:
 
@@ -207,6 +209,8 @@ ratings_long <- comp3 |>
 ratings_long |> slice(1:8) |> kable(caption = "Preview: tidy long ratings (0–5 scale)")
 ```
 
+The `ratings_long` data frame restructures the ratings into a "tidy" long format, where each row represents a single movie, a specific rating site (e.g., Fandango, IMDb, Rotten Tomatoes, Metacritic), and the type of rater (user or critic) alongside the normalized score (0–5 scale). This format makes it easy to compare scores across sites and rating types, and enables powerful summary and visualization options—such as calculating averages by site or faceting plots. For example, the preview shows "Avengers: Age of Ultron" receiving different scores from Fandango (user: 4.50), IMDb (critic: 3.90), Rotten Tomatoes (critic: 3.70, user: 4.30), and Metacritic (critic: 3.30, user: 3.55), highlighting differences in ratings across platforms and perspectives.
+
 # Inflation rate comparison across sites
 This code block calculates and compares the mean movie scores across all major rating sites. This is the central quantitative part of the analysis, as it allows us to verify the article's main claim: that Fandango's ratings are systematically higher than those from other platforms.
 
@@ -228,6 +232,7 @@ site_means <- bind_rows(
 )
 kable(site_means, digits = 2, caption = "Mean score per site and Fandango inflation rate")
 ```
+The output table summarizes the average movie ratings for each site and the Fandango inflation rate. Fandango's mean score (3.85) is noticeably higher than IMDb (3.37), Metacritic (3.10), and Rotten Tomatoes (3.12), confirming the article's claim of systematic inflation. The additional row, `fandango_inflation_rate`, shows that 9% of movies had their Fandango displayed star rating inflated by at least 0.5 stars compared to the underlying average. This concise comparison demonstrates both the relative inflation of Fandango ratings and the prevalence of the inflation phenomenon in the sample.
 
 # Exploratory graphics
 This section uses visualizations to provide a visual summary of the data and reinforce the findings from the article. The first plot, Displayed stars vs. actual average on Fandango, is a scatter plot that directly compares the two Fandango rating metrics.
@@ -247,6 +252,10 @@ ggplot(comp3, aes(x = fandango_rating_value, y = fandango_stars)) +
     y = "Displayed stars (0–5)"
   )
 ```
+The scatter plot visualizes the relationship between Fandango's displayed star ratings and their actual average values for the 2015 movie sample. Each point represents a movie. The dashed line indicates perfect parity—where the displayed stars would match the true average. Points above this line show cases where Fandango rounded up its displayed rating, visually confirming the systematic inflation described in the article. Most movies have displayed ratings that are equal to or higher than their actual average, demonstrating the prevalence of Fandango's "rounding up" practice.
+___________________________________________________________________________________________________________________________________
+
+
 This section visualizes the distribution of movie scores from different websites on a common 0–5 scale. This allows for a direct comparison of how other sites' ratings are distributed relative to each other, and implicitly, to Fandango's.
 
 * Histograms: The code creates a separate histogram for each site (excluding Fandango) to show the frequency of ratings at different score levels.
@@ -265,6 +274,8 @@ ratings_long |>
     x = "Score (0–5)", y = "Count"
   )
 ```
+This set of histograms shows how movie scores are distributed on a 0–5 scale for IMDb, Metacritic, and Rotten Tomatoes. Each panel reveals the frequency of scores for each site. IMDb and Metacritic ratings tend to cluster toward the middle of the scale (between 2.5 and 4), while Rotten Tomatoes displays a wider, more varied spread, including a notable number of higher ratings. The differences in shape and spread highlight that other sites provide a broader range of scores, in contrast to Fandango's compressed and consistently higher ratings. This visualization supports the article's finding: Fandango's scores are systematically rounded up, while other platforms show more diversity and less inflation.
+__________________________________________________________________________________________________________________________________
 This section provides a direct summary of the most egregious examples of rating inflation found in the dataset. It creates a table of the top 10 movies where the displayed star rating was most inflated compared to the actual average rating.
 
 * Ranking: The code calculates the difference between fandango_stars and fandango_rating_value and then sorts the movies in descending order based on this difference.
@@ -279,6 +290,8 @@ top_inflated <- comp3 |>
 kable(top_inflated, digits = 2, caption = "Top-10 inflation by displayed minus actual Fandango rating (stars)")
 ```
 
+The "Top-10 inflation" table lists movies where the difference between Fandango's displayed stars and the actual average rating is the largest (0.5 stars in every case shown). This direct comparison highlights the specific films most affected by Fandango's rounding-up practice, with popular titles like "Avengers: Age of Ultron," "Cinderella," and "Ant-Man" all showing a 0.5-star inflation. These examples provide clear, concrete evidence of the systematic inflation described in the article and demonstrate how the effect was not limited to obscure titles but also impacted major releases.
+
 # Deliverable: final analysis-ready data frame
 This section provides the final deliverable of the assignment: the cleaned and transformed data frame. It takes the movies_clean data frame, which was prepared in the previous steps, and assigns it to a new variable called final_df. This data frame contains a carefully selected subset of columns with meaningful names and includes the key target variable (inflated_flag). The table shown is a preview of the first 10 rows, demonstrating that the data is now structured and ready for any future analysis, such as modeling, visualization, or statistical inference. This step formally concludes the data transformation portion of the project.
 
@@ -288,7 +301,8 @@ final_df <- movies_clean
 kable(head(final_df, 10), caption = "Final deliverable: cleaned subset + target")
 ```
 
-
+The `final_df` data frame offers a fully cleaned and analysis-ready subset of the movie ratings data, with each row representing a film and its ratings from multiple sources. It includes clear, human-friendly column names and the key target variable `inflated_flag`, which identifies movies where Fandango's displayed star rating was at least 0.5 higher than its actual average. The preview demonstrates that the dataset is now well-structured for downstream analysis, such as statistical modeling or further visualization, meeting the requirements for a reproducible and transparent data science workflow.
+___________________________________________________________________________________________________________________________________
 This dataset, from the 2015 FiveThirtyEight investigation, has several inherent limitations:
 
 - **Temporal Scope:**  
@@ -334,8 +348,8 @@ To build on this project, we recommend the following:
 
 # Submission links (replace with your URLs)
 
-- **GitHub repository (.Rmd included):** _ADD YOUR LINK HERE_  
-- **RPubs publication:** _ADD YOUR LINK HERE_  
+- **GitHub repository (.Rmd included):* https://github.com/tahamalik80/Week1_Data_607
+- **RPubs publication:** https://rpubs.com/tmalik03/Week1_DATA_607
 
 # Session info
 
